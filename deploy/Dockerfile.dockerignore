@@ -1,0 +1,5 @@
+**
+!requirements.txt
+!iiot/
+!iiot/**
+**/__pycache__/

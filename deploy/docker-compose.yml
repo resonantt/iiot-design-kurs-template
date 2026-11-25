@@ -1,0 +1,94 @@
+name: iiot-lab7
+
+x-app: &app
+  image: iiot-lab7:local
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  restart: unless-stopped
+  depends_on:
+    broker:
+      condition: service_healthy
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import os, time; assert time.time() - os.path.getmtime('/tmp/healthy') < 15"
+    interval: 5s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+
+x-env: &app-env
+  MQTT_HOST: broker
+  MQTT_PORT: "1883"
+  SITE: kyiv
+  LINE: line1
+  SIGNING_KEY: "${SIGNING_KEY:?Set SIGNING_KEY in .env}"
+  HEALTH_FILE: /tmp/healthy
+  PYTHONUNBUFFERED: "1"
+
+services:
+  broker:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./acl:/mosquitto/config/acl:ro
+      - ./passwd:/mosquitto/config/passwd:ro
+      - broker-data:/mosquitto/data
+    environment:
+      INGEST_PASSWORD: "${INGEST_PASSWORD:?Set INGEST_PASSWORD in .env}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'mosquitto_sub -h 127.0.0.1 -u ingest -P "$$INGEST_PASSWORD" -t "plant/#" -E'
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  gateway-01:
+    <<: *app
+    command: ["python", "-m", "iiot.services.gateway_service"]
+    environment:
+      <<: *app-env
+      DEVICE_ID: pump-01
+      MQTT_USER: pump-01
+      MQTT_PASSWORD: "${PUMP01_PASSWORD:?Set PUMP01_PASSWORD in .env}"
+      FAULT_AFTER: "15"
+
+  gateway-02:
+    <<: *app
+    command: ["python", "-m", "iiot.services.gateway_service"]
+    environment:
+      <<: *app-env
+      DEVICE_ID: pump-02
+      MQTT_USER: pump-02
+      MQTT_PASSWORD: "${PUMP02_PASSWORD:?Set PUMP02_PASSWORD in .env}"
+
+  ingest:
+    <<: *app
+    command: ["python", "-m", "iiot.services.ingest_service"]
+    environment:
+      <<: *app-env
+      MQTT_USER: ingest
+      MQTT_PASSWORD: "${INGEST_PASSWORD:?Set INGEST_PASSWORD in .env}"
+      DB_PATH: /data/iiot.db
+    volumes:
+      - db-data:/data
+
+  alerts:
+    <<: *app
+    command: ["python", "-m", "iiot.services.alert_service"]
+    environment:
+      <<: *app-env
+      MQTT_USER: alerts
+      MQTT_PASSWORD: "${ALERTS_PASSWORD:?Set ALERTS_PASSWORD in .env}"
+
+volumes:
+  broker-data:
+  db-data:
