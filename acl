@@ -1,0 +1,12 @@
+user pump-01
+topic write plant/+/+/pump-01/#
+
+user pump-02
+topic write plant/+/+/pump-02/#
+
+user ingest
+topic read plant/#
+
+user alerts
+topic read plant/+/+/+/telemetry
+topic write plant/+/+/+/alerts
